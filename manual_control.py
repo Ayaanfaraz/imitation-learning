@@ -210,7 +210,7 @@ class World(object):
             print("No recommended values for 'speed' attribute")
         # Spawn the player.
         if self.player is not None:
-            spawn_point = self.player.get_transform()
+            spawn_point = self.map.get_spawn_points()[0]#self.player.get_transform()
             spawn_point.location.z += 2.0
             spawn_point.rotation.roll = 0.0
             spawn_point.rotation.pitch = 0.0
@@ -304,9 +304,9 @@ class KeyboardControl(object):
     def parse_events(self, client, world, clock):
         if isinstance(self._control, carla.VehicleControl):
             current_lights = self._lights
-            # if len(collision_array)> 0:
-            #     collision_array.clear()
-            #     world.restart()
+            if len(collision_array)> 0:
+                collision_array.clear()
+                world.restart()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return True
@@ -431,23 +431,27 @@ class KeyboardControl(object):
 
         if not self._autopilot_enabled:
             if isinstance(self._control, carla.VehicleControl):
-                self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
-                self._control.reverse = self._control.gear < 0
-                # Set automatic control-related vehicle lights
-                if self._control.brake:
-                    current_lights |= carla.VehicleLightState.Brake
-                else: # Remove the Brake flag
-                    current_lights &= ~carla.VehicleLightState.Brake
-                if self._control.reverse:
-                    current_lights |= carla.VehicleLightState.Reverse
-                else: # Remove the Reverse flag
-                    current_lights &= ~carla.VehicleLightState.Reverse
-                if current_lights != self._lights: # Change the light state only if necessary
-                    self._lights = current_lights
-                    world.player.set_light_state(carla.VehicleLightState(self._lights))
-            elif isinstance(self._control, carla.WalkerControl):
-                self._parse_walker_keys(pygame.key.get_pressed(), clock.get_time(), world)
-            world.player.apply_control(self._control)
+                self._steer_cache = 0 #random.uniform(-0.7, 0.7) # make sure input between -0.7 and 0.7
+                self._control.steer = round(self._steer_cache, 1)
+                self._control.throttle = 0.25 #min(self._control.throttle + 0.01, 1)
+                world.player.apply_control(self._control)
+            #     self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
+            #     self._control.reverse = self._control.gear < 0
+            #     # Set automatic control-related vehicle lights
+            #     if self._control.brake:
+            #         current_lights |= carla.VehicleLightState.Brake
+            #     else: # Remove the Brake flag
+            #         current_lights &= ~carla.VehicleLightState.Brake
+            #     if self._control.reverse:
+            #         current_lights |= carla.VehicleLightState.Reverse
+            #     else: # Remove the Reverse flag
+            #         current_lights &= ~carla.VehicleLightState.Reverse
+            #     if current_lights != self._lights: # Change the light state only if necessary
+            #         self._lights = current_lights
+            #         world.player.set_light_state(carla.VehicleLightState(self._lights))
+            # elif isinstance(self._control, carla.WalkerControl):
+            #     self._parse_walker_keys(pygame.key.get_pressed(), clock.get_time(), world)
+            # world.player.apply_control(self._control)
 
     def _parse_vehicle_keys(self, keys, milliseconds):
         if keys[K_UP] or keys[K_w]:
@@ -911,20 +915,20 @@ class CameraManager(object):
         bound_y = 0.5 + self._parent.bounding_box.extent.y
         Attachment = carla.AttachmentType
         self._camera_transforms = [
-            (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=1.6, z=1.7)), Attachment.Rigid),
+            (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=5.5, y=1.5, z=1.5)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=-8.0, z=6.0), carla.Rotation(pitch=6.0)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=-1, y=-bound_y, z=0.5)), Attachment.Rigid)]
         self.transform_index = 1
         self.sensors = [
+            ['sensor.camera.semantic_segmentation', cc.CityScapesPalette,
+                'Camera Semantic Segmentation (CityScapes Palette)', {}],
             ['sensor.camera.rgb', cc.Raw, 'Camera RGB', {}],
             ['sensor.camera.depth', cc.Raw, 'Camera Depth (Raw)', {}],
             ['sensor.camera.depth', cc.Depth, 'Camera Depth (Gray Scale)', {}],
             ['sensor.camera.depth', cc.LogarithmicDepth, 'Camera Depth (Logarithmic Gray Scale)', {}],
             ['sensor.camera.semantic_segmentation', cc.Raw, 'Camera Semantic Segmentation (Raw)', {}],
-            ['sensor.camera.semantic_segmentation', cc.CityScapesPalette,
-                'Camera Semantic Segmentation (CityScapes Palette)', {}],
             ['sensor.lidar.ray_cast', None, 'Lidar (Ray-Cast)', {'range': '50'}],
             ['sensor.camera.dvs', cc.Raw, 'Dynamic Vision Sensor', {}],
             ['sensor.camera.rgb', cc.Raw, 'Camera RGB Distorted',
@@ -1054,11 +1058,25 @@ def game_loop(args):
         clock = pygame.time.Clock()
         while True:
             clock.tick_busy_loop(60)
-            if controller.parse_events(client, world, clock):
-                return
-            world.tick(clock)
-            world.render(display)
-            pygame.display.flip()
+            for i in range(110000):
+                #print ("Episode ", i)
+                for j in range(30):
+                    if controller.parse_events(client, world, clock):
+                         return
+                    world.tick(clock)
+                    world.render(display)
+                    pygame.display.flip()
+                    if i == 300:
+                        pass
+                        #world.restart()
+                        #break
+                        # clock.tick_busy_loop(60000)
+
+            # if controller.parse_events(client, world, clock):
+            #     return
+            # world.tick(clock)
+            # world.render(display)
+            # pygame.display.flip()
 
     finally:
 
