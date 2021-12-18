@@ -132,8 +132,8 @@ try:
 except ImportError:
     raise RuntimeError('cannot import numpy, make sure numpy package is installed')
 
-global_image_list = []
-global_events = []
+collision_array = []
+
 # ==============================================================================
 # -- Global functions ----------------------------------------------------------
 # ==============================================================================
@@ -301,16 +301,13 @@ class KeyboardControl(object):
         self._steer_cache = 0.0
         world.hud.notification("Press 'H' or '?' for help.", seconds=4.0)
 
-    def parse_events(self, client, world, clock, angle):
-        ###
-        #world.camera_manager.set_sensor()
-        ###
-
-
+    def parse_events(self, client, world, clock):
         if isinstance(self._control, carla.VehicleControl):
             current_lights = self._lights
+            # if len(collision_array)> 0:
+            #     collision_array.clear()
+            #     world.restart()
         for event in pygame.event.get():
-
             if event.type == pygame.QUIT:
                 return True
             elif event.type == pygame.KEYUP:
@@ -431,39 +428,27 @@ class KeyboardControl(object):
                         current_lights ^= carla.VehicleLightState.LeftBlinker
                     elif event.key == K_x:
                         current_lights ^= carla.VehicleLightState.RightBlinker
+
         if not self._autopilot_enabled:
             if isinstance(self._control, carla.VehicleControl):
-                if angle == 'c':
-                    world.restart()
-                else:
-                    self._test_function(world, clock.get_time(), angle)
-                # self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
-                # self._control.reverse = self._control.gear < 0
-                # # Set automatic control-related vehicle lights
-                # if self._control.brake:
-                    # current_lights |= carla.VehicleLightState.Brake
-                # else: # Remove the Brake flag
-                    # current_lights &= ~carla.VehicleLightState.Brake
-                # if self._control.reverse:
-                    # current_lights |= carla.VehicleLightState.Reverse
-                # else: # Remove the Reverse flag
-                    # current_lights &= ~carla.VehicleLightState.Reverse
-                # if current_lights != self._lights: # Change the light state only if necessary
-                    # self._lights = current_lights
-                    # world.player.set_light_state(carla.VehicleLightState(self._lights))
-            # elif isinstance(self._control, carla.WalkerControl):
-                # self._parse_walker_keys(pygame.key.get_pressed(), clock.get_time(), world)
-            # world.player.apply_control(self._control)
+                self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
+                self._control.reverse = self._control.gear < 0
+                # Set automatic control-related vehicle lights
+                if self._control.brake:
+                    current_lights |= carla.VehicleLightState.Brake
+                else: # Remove the Brake flag
+                    current_lights &= ~carla.VehicleLightState.Brake
+                if self._control.reverse:
+                    current_lights |= carla.VehicleLightState.Reverse
+                else: # Remove the Reverse flag
+                    current_lights &= ~carla.VehicleLightState.Reverse
+                if current_lights != self._lights: # Change the light state only if necessary
+                    self._lights = current_lights
+                    world.player.set_light_state(carla.VehicleLightState(self._lights))
+            elif isinstance(self._control, carla.WalkerControl):
+                self._parse_walker_keys(pygame.key.get_pressed(), clock.get_time(), world)
+            world.player.apply_control(self._control)
 
-    def _test_function(self,world, milliseconds, angle_input):
-        self._steer_cache = angle_input #random.uniform(-0.7, 0.7) # make sure input between -0.7 and 0.7
-        self._control.steer = round(self._steer_cache, 1)
-        self._control.throttle = 0.25 #min(self._control.throttle + 0.01, 1)
-        ##world.hud.notification("Function called with angle: " + str(round(self._steer_cache, 1)) )
-        #print(str(round(self._steer_cache, 1)))
-        world.player.apply_control(self._control)
-        return False
-        
     def _parse_vehicle_keys(self, keys, milliseconds):
         if keys[K_UP] or keys[K_w]:
             self._control.throttle = min(self._control.throttle + 0.01, 1)
@@ -744,13 +729,13 @@ class CollisionSensor(object):
             return
         actor_type = get_actor_display_name(event.other_actor)
         self.hud.notification('Collision with %r' % actor_type)
-       # world.restart()
+
         impulse = event.normal_impulse
         intensity = math.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
         self.history.append((event.frame, intensity))
         if len(self.history) > 4000:
             self.history.pop(0)
-        global_events.append('c')
+        collision_array.append('c')
 
 
 # ==============================================================================
@@ -926,20 +911,20 @@ class CameraManager(object):
         bound_y = 0.5 + self._parent.bounding_box.extent.y
         Attachment = carla.AttachmentType
         self._camera_transforms = [
-            (carla.Transform(carla.Location(x=1.6, z=1.7)), Attachment.Rigid),
             (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm),
+            (carla.Transform(carla.Location(x=1.6, z=1.7)), Attachment.Rigid),
             (carla.Transform(carla.Location(x=5.5, y=1.5, z=1.5)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=-8.0, z=6.0), carla.Rotation(pitch=6.0)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=-1, y=-bound_y, z=0.5)), Attachment.Rigid)]
         self.transform_index = 1
         self.sensors = [
-            ['sensor.camera.semantic_segmentation', cc.CityScapesPalette,
-             'Camera Semantic Segmentation (CityScapes Palette)', {}],
             ['sensor.camera.rgb', cc.Raw, 'Camera RGB', {}],
             ['sensor.camera.depth', cc.Raw, 'Camera Depth (Raw)', {}],
             ['sensor.camera.depth', cc.Depth, 'Camera Depth (Gray Scale)', {}],
             ['sensor.camera.depth', cc.LogarithmicDepth, 'Camera Depth (Logarithmic Gray Scale)', {}],
             ['sensor.camera.semantic_segmentation', cc.Raw, 'Camera Semantic Segmentation (Raw)', {}],
+            ['sensor.camera.semantic_segmentation', cc.CityScapesPalette,
+                'Camera Semantic Segmentation (CityScapes Palette)', {}],
             ['sensor.lidar.ray_cast', None, 'Lidar (Ray-Cast)', {'range': '50'}],
             ['sensor.camera.dvs', cc.Raw, 'Dynamic Vision Sensor', {}],
             ['sensor.camera.rgb', cc.Raw, 'Camera RGB Distorted',
@@ -998,10 +983,6 @@ class CameraManager(object):
     def next_sensor(self):
         self.set_sensor(self.index + 1)
 
-    def get_image(self,index):
-        weak_self = weakref.ref(self)
-        self.sensor.listen(lambda image: CameraManager._parse_image(weak_self, image))
-
     def toggle_recording(self):
         self.recording = not self.recording
         self.hud.notification('Recording %s' % ('On' if self.recording else 'Off'))
@@ -1015,192 +996,38 @@ class CameraManager(object):
         self = weak_self()
         if not self:
             return
-        # if self.sensors[self.index][0].startswith('sensor.lidar'):
-        #     points = np.frombuffer(image.raw_data, dtype=np.dtype('f4'))
-        #     points = np.reshape(points, (int(points.shape[0] / 4), 4))
-        #     lidar_data = np.array(points[:, :2])
-        #     lidar_data *= min(self.hud.dim) / (2.0 * self.lidar_range)
-        #     lidar_data += (0.5 * self.hud.dim[0], 0.5 * self.hud.dim[1])
-        #     lidar_data = np.fabs(lidar_data)  # pylint: disable=E1111
-        #     lidar_data = lidar_data.astype(np.int32)
-        #     lidar_data = np.reshape(lidar_data, (-1, 2))
-        #     lidar_img_size = (self.hud.dim[0], self.hud.dim[1], 3)
-        #     lidar_img = np.zeros((lidar_img_size), dtype=np.uint8)
-        #     lidar_img[tuple(lidar_data.T)] = (255, 255, 255)
-        #     self.surface = pygame.surfarray.make_surface(lidar_img)
-        # elif self.sensors[self.index][0].startswith('sensor.camera.dvs'):
-        #     # Example of converting the raw_data from a carla.DVSEventArray
-        #     # sensor into a NumPy array and using it as an image
-        #     dvs_events = np.frombuffer(image.raw_data, dtype=np.dtype([
-        #         ('x', np.uint16), ('y', np.uint16), ('t', np.int64), ('pol', np.bool)]))
-        #     dvs_img = np.zeros((image.height, image.width, 3), dtype=np.uint8)
-        #     # Blue is positive, red is negative
-        #     dvs_img[dvs_events[:]['y'], dvs_events[:]['x'], dvs_events[:]['pol'] * 2] = 255
-        #     self.surface = pygame.surfarray.make_surface(dvs_img.swapaxes(0, 1))
+        if self.sensors[self.index][0].startswith('sensor.lidar'):
+            points = np.frombuffer(image.raw_data, dtype=np.dtype('f4'))
+            points = np.reshape(points, (int(points.shape[0] / 4), 4))
+            lidar_data = np.array(points[:, :2])
+            lidar_data *= min(self.hud.dim) / (2.0 * self.lidar_range)
+            lidar_data += (0.5 * self.hud.dim[0], 0.5 * self.hud.dim[1])
+            lidar_data = np.fabs(lidar_data)  # pylint: disable=E1111
+            lidar_data = lidar_data.astype(np.int32)
+            lidar_data = np.reshape(lidar_data, (-1, 2))
+            lidar_img_size = (self.hud.dim[0], self.hud.dim[1], 3)
+            lidar_img = np.zeros((lidar_img_size), dtype=np.uint8)
+            lidar_img[tuple(lidar_data.T)] = (255, 255, 255)
+            self.surface = pygame.surfarray.make_surface(lidar_img)
+        elif self.sensors[self.index][0].startswith('sensor.camera.dvs'):
+            # Example of converting the raw_data from a carla.DVSEventArray
+            # sensor into a NumPy array and using it as an image
+            dvs_events = np.frombuffer(image.raw_data, dtype=np.dtype([
+                ('x', np.uint16), ('y', np.uint16), ('t', np.int64), ('pol', np.bool)]))
+            dvs_img = np.zeros((image.height, image.width, 3), dtype=np.uint8)
+            # Blue is positive, red is negative
+            dvs_img[dvs_events[:]['y'], dvs_events[:]['x'], dvs_events[:]['pol'] * 2] = 255
+            self.surface = pygame.surfarray.make_surface(dvs_img.swapaxes(0, 1))
         else:
             image.convert(self.sensors[self.index][1])
             array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (image.height, image.width, 4))
             array = array[:, :, :3]
-            #array = array[:, :, ::-1]
-            global_image_list.append(array)
-            #print(array)
+            array = array[:, :, ::-1]
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
         if self.recording:
             image.save_to_disk('_out/%08d' % image.frame)
 
-########################
-### -- Steering Class -- ###
-##############################
-
-import keras
-import numpy as np
-import random
-import os
-import tensorflow as tf
-from collections import deque
-from tensorflow import keras
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.optimizers import Adam
-import matplotlib.pyplot as plt
-from matplotlib import image
-import time
-
-import numpy as np
-import random
-import os
-import tensorflow as tf
-from collections import deque
-from tensorflow import keras
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.optimizers import Adam
-import matplotlib.pyplot as plt
-from matplotlib import image
-import time
-
-class Steering:
-
-    def __init__(self):
-        self.done = False
-        self.state = np.empty((480, 640, 3))
-        self.count = 0
-        self.chosen_steering_angle = 0
-        self.predicted_angles = [-0.7, -0.60, -0.48, -0.36, -0.24, -0.12,
-                                 0, 0.12, 0.24, 0.36, 0.48, 0.60, 0.7]
-
-    def step(self, action, client, world, clock, controller):
-        assert action in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-
-        predicted_angle = self.predicted_angles[action]
-        print("Steering Angle: ", predicted_angle)
-
-        controller.parse_events(client, world, clock, predicted_angle)
-
-        # SET CAR TO DO ACTION IN CARLA
-        self.chosen_steering_angle = predicted_angle
-
-        # reward per step. ###CHANGE REWARD ####
-        # implement reward = 1 every timestep, if collision reward = -10 otherwise 1- lane invasion percent
-        reward = 1 - predicted_angle
-        self.count += 1
-        self.done = False
-
-        ### DO collisions IN SIMULATOR for end ########
-        ### Do run end if images are finished
-
-        if self.count == 500:
-            self.done = True
-
-        if (self.done == False):
-
-            next_image_state = global_image_list.pop()
-            #print(image, "\n") next image state
-            # GET uncertainty image from carla semantic segmentation, after doing the action in carla
-            self.image = next_image_state  # should get from simulator
-
-        return self.image, reward, self.done
-
-    def reset(self):
-        # reset to starting position
-        #spawn_point = self.spawn_poin
-        return global_image_list.pop()
-
-
-    #####################
-    #######################
-    ########################
-
-class DQNAgent:
-    def __init__(self, state_size, action_size):
-        self.state_size = state_size # ()
-        self.action_size = action_size
-        self.memory = deque(maxlen=2000)
-        self.gamma = 0.9    # discount rate
-        self.epsilon = 0.21835392111705482  # exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.99995 # changed from 0.995, maybe it can be even slower
-        self.learning_rate = 0.001
-        self.model = self._build_model()
-
-    def _build_model(self):
-        # OUR MODEL WILL BE RESNET WITH SOME LINEAR LAYERS AT THE END
-        # INPUT = (3, 480, 640) STACK OF 3 UNCERTAINTY MAPS
-        # OUTPUT = (1, 13)
-        # ResNet 50
-        base_model = tf.keras.applications.ResNet50(weights='imagenet', include_top=False, input_shape=(480, 640, 3))
-        base_model.trainable = False
-        # Additional Linear Layers
-        inputs = keras.Input(shape=(480, 640, 3))
-        x = base_model(inputs, training=False)
-        x = keras.layers.GlobalAveragePooling2D()(x)
-        # x = keras.layers.Dropout(0.2)(x)
-        x = keras.layers.Flatten()(x)
-        x = keras.layers.Dense(units=40, activation='relu')(x)
-        # x = keras.layers.Dropout(0.2)(x)
-        output = keras.layers.Dense(units=13, activation='linear')(x)
-        # Compile the Model
-        model = keras.Model(inputs, output)
-        model.compile(loss='mse', optimizer=Adam(learning_rate=self.learning_rate))
-        return model
-
-
-    def memorize(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
-
-
-    def act(self, state):
-        # randomly select action
-        if np.random.rand() <= self.epsilon:
-            return random.randrange(self.action_size)
-        # use NN to predict action
-        state = np.expand_dims(state, axis=0)
-        act_values = self.model.predict(state) # [[0.2, 0.3, 0.6, 0.1]]
-        return np.argmax(act_values[0])
-
-
-    def replay(self, batch_size):
-        minibatch = random.sample(self.memory, batch_size)
-        states, targets_f = [], []
-        for state, action, reward, next_state, done in minibatch:
-            # if done, set target = reward
-            target = reward
-            # if not done, predict future discounted reward with the Bellman equation
-            if not done:
-                target = (reward + self.gamma * np.amax(self.model.predict(next_state)[0]))
-            target_f = self.model.predict(state)
-            target_f[0][action] = target
-            # filtering out states and targets for training
-            states.append(state[0])
-            targets_f.append(target_f[0])
-        # RUN ONE ITERATION OF GRADIENT DESCENT
-        history = self.model.fit(np.array(states), np.array(targets_f), epochs=1, verbose=0)
-        # Keeping track of loss
-        loss = history.history['loss'][0]
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-        return loss
 
 # ==============================================================================
 # -- game_loop() ---------------------------------------------------------------
@@ -1212,17 +1039,7 @@ def game_loop(args):
     pygame.font.init()
     world = None
 
-
-
     try:
-        env = Steering()
-        state_size = (480, 640, 3)  # state = (channel size, lenth and width pixel img)
-        action_size = 13  # action: various steering angles
-        agent = DQNAgent(state_size, action_size)
-        done = False
-        batch_size = 64
-
-
         client = carla.Client(args.host, args.port)
         client.set_timeout(2.0)
 
@@ -1231,73 +1048,14 @@ def game_loop(args):
             pygame.HWSURFACE | pygame.DOUBLEBUF)
 
         hud = HUD(args.width, args.height)
-        world1 = client.load_world('Town04')
-        world = World(world1, hud, args)
+        world = World(client.get_world(), hud, args)
         controller = KeyboardControl(world, args.autopilot)
 
         clock = pygame.time.Clock()
         while True:
             clock.tick_busy_loop(60)
-            # world.camera_manager.set_sensor(0)
-
-            EPISODES = 101  # try 20000
-            for e in range(1, EPISODES):
-                clock.tick_busy_loop(60)
-                state = global_image_list.pop() #env.reset() we just need the functionality not this function
-                print(state)
-                #state = np.reshape(state, [1, state_size])
-                for t in range(1000):
-                    action = agent.act(state)
-
-                    if len(global_events) > 0:
-                        reward = -100
-                        controller.parse_events(client, world, clock, 'c') # restart world
-                        break
-                    #
-                    next_state, reward, done = env.step(action, client, world, clock, controller)
-                    # next_state = np.reshape(next_state, [1, state_size])
-                    agent.memorize(state, action, reward, next_state, done)
-                    #time.sleep(60)
-                    state = next_state
-                            # world = None
-                            # world = World(client.get_world(), hud, args)
-                            # controller = KeyboardControl(world, args.autopilot)
-                            # clock = pygame.time.Clock()
-                            #world.restart()
-
-                    world.tick(clock)
-                    world.render(display)
-                    pygame.display.flip()
-
-                    #print("For list image env.count: ")
-
-                    # if done:
-                    #     # print("episode: {}/{}, timestep: {}, e: {}".format(e+1, EPISODES, t, agent.epsilon))
-                    #     print(
-                    #         'Time since episode {} started = {:.0f}m {:.0f}s'.format(e + 1, (time.time() - since) // 60,
-                    #                                                                  (time.time() - since) % 60))
-                    #     print("~~~~~~~~~")
-                    #     break
-                    # if len(agent.memory) > batch_size:
-                    #     loss = agent.replay(batch_size)
-                    #     # Logging training loss every 10 timesteps
-                    #     if t % 10 == 0:
-                    #         print("episode: {}/{}, timestep: {}, e: {}".format(e + 1, EPISODES, t, agent.epsilon))
-                    #         print('Time since episode {} started = {:.0f}m {:.0f}s'.format(e + 1,
-                    #                                                                        (time.time() - since) // 60,
-                    #                                                                        (time.time() - since) % 60))
-                    #         print("~~~~~~~~~")
-
-
-
-
-            #angle_input = getprediction(image)
-
-            # if controller.parse_events(client, world, clock, -0.6):
-            #     return
-            # chosen_angle = input("Give an angle: ")
-            # if controller.test_function(clock.get_time, chosen_angle):
-                # return
+            if controller.parse_events(client, world, clock):
+                return
             world.tick(clock)
             world.render(display)
             pygame.display.flip()
@@ -1345,7 +1103,7 @@ def main():
         '--res',
         metavar='WIDTHxHEIGHT',
         default='1280x720',
-        help='window resolution (default: 1280x720)') #Original 1280 x 720
+        help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--filter',
         metavar='PATTERN',
