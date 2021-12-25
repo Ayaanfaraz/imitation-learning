@@ -140,7 +140,7 @@ lane_invasion_error = []
 predicted_angles = [-0.7, -0.60, -0.48, -0.36, -0.24, -0.12, 0,
                      0.12, 0.24, 0.36, 0.48, 0.60, 0.7]
 
-state = np.empty((720, 1280, 3))
+state = np.empty((480, 640, 3))
 # ==============================================================================
 # -- Global functions ----------------------------------------------------------
 # ==============================================================================
@@ -166,6 +166,12 @@ def get_actor_display_name(actor, truncate=250):
 class World(object):
     def __init__(self, carla_world, hud, args):
         self.world = carla_world
+        #Custom synchrony and timesetp settings
+        # settings = self.world.get_settings()
+        # settings.synchronous_mode=True
+        # #settings.fixed_delta_seconds=0.1
+        # self.world.apply_settings(settings)
+
         self.actor_role_name = args.rolename
         try:
             self.map = self.world.get_map()
@@ -1067,6 +1073,7 @@ def game_loop(args):
             pygame.HWSURFACE | pygame.DOUBLEBUF)
         hud = HUD(args.width, args.height)
         world = World(client.load_world('Town04'), hud, args)
+
         controller = KeyboardControl(world, args.autopilot)
         clock = pygame.time.Clock()
         counter = 0
@@ -1080,21 +1087,29 @@ def game_loop(args):
 
         while True:
             #clock.tick_busy_loop(1)
-            for i in range(110000):
+            for i in range(100):
                 
                 #1. respawn car
+                #world.tick(clock)
                 clock.tick_busy_loop(1)
                 collision_array.clear()
                 lane_invasion_error.clear()
                 world.restart()
+
+                #world.player.set_transform(world.map.get_spawn_points()[0])
+                # waypoint = random.choice(waypoint.next(1.5))
+                #world.player.set_transform(world.map.get_spawn_points()[0])
+
+                clock.tick_busy_loop(1)
+
                 print ("Episode ", i)
                 
                 #2. get initial image because new episode
-                clock.tick_busy_loop(1)
+                #clock.tick_busy_loop(1)
                 state, frame = image_list.pop()
                 image_list.clear()
 
-                for j in range(30000):
+                for j in range(3000):
 
                     #Limit fps to 30
                     clock.tick_busy_loop(30)
@@ -1164,29 +1179,32 @@ def game_loop(args):
                         memory_done = True
                     if state.shape == next_state.shape:
                         # print("Both states have same shape")
+                        print((state.shape, action_index, total_reward, next_state.shape, memory_done, counter))
                         agent.memorize(state, action_index, total_reward, next_state, memory_done)
 
                     #Set next state to st
                     state = next_state
 
                     #Calculate loss
-                    # if len(agent.memory) > batch_size:
-                    #     loss = agent.replay(batch_size)
-                    #     print("loss: ", loss)
-                        #break
-
+                    if len(agent.memory) > batch_size and j > 15:
+                        # print("Epsiode #: %d and Breaking before replay" % i)
+                        loss = agent.replay(batch_size)
+                        #unless agent.replay(batch_size) == True:   
+                        print("loss: ", loss)
+                        
                     # Collision happened
                     if type(done) == str:
                         # print("Collision Occured, Next episode beginning...")
                         # print("collision reward ", reward_collison)
                         collision_array.clear()
                         lane_invasion_error.clear()
+                        #world.player.set_transform(world.map.get_spawn_points()[0])
                         world.restart()
                         break
                     #Episode is done
                     elif done is True:
                         return
-
+                counter += 1
                 #Print loss at end of episode
                 # if len(agent.memory) > batch_size:
                 #     loss = agent.replay(batch_size)
@@ -1234,7 +1252,7 @@ def main():
     argparser.add_argument(
         '--res',
         metavar='WIDTHxHEIGHT',
-        default='1280x720',
+        default='640x480',
         help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--filter',
