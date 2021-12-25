@@ -87,6 +87,7 @@ import math
 import random
 import re
 import weakref
+import time 
 
 try:
     import pygame
@@ -1094,11 +1095,13 @@ def game_loop(args):
                 clock.tick_busy_loop(1)
                 collision_array.clear()
                 lane_invasion_error.clear()
-                world.restart()
+                #world.restart()
 
-                #world.player.set_transform(world.map.get_spawn_points()[0])
+                world.player.set_transform(world.map.get_spawn_points()[0])
+
+                # world.player.set_transform(world.map.get_spawn_points()[0])
                 # waypoint = random.choice(waypoint.next(1.5))
-                #world.player.set_transform(world.map.get_spawn_points()[0])
+                # world.player.set_transform(world.map.get_spawn_points()[0])
 
                 clock.tick_busy_loop(1)
 
@@ -1179,8 +1182,8 @@ def game_loop(args):
                         memory_done = True
                     if state.shape == next_state.shape:
                         # print("Both states have same shape")
-                        print((state.shape, action_index, total_reward, next_state.shape, memory_done, counter))
-                        agent.memorize(state, action_index, total_reward, next_state, memory_done)
+                        # print((state.shape, action_index, total_reward, next_state.shape, memory_done, counter))
+                        agent.memorize(state, action_index, total_reward, next_state, memory_done, frame)
 
                     #Set next state to st
                     state = next_state
@@ -1196,10 +1199,11 @@ def game_loop(args):
                     if type(done) == str:
                         # print("Collision Occured, Next episode beginning...")
                         # print("collision reward ", reward_collison)
+                        print("Collided frame number: ",frame)
                         collision_array.clear()
                         lane_invasion_error.clear()
-                        #world.player.set_transform(world.map.get_spawn_points()[0])
-                        world.restart()
+                        world.player.set_transform(world.map.get_spawn_points()[0])
+                        #world.restart()
                         break
                     #Episode is done
                     elif done is True:

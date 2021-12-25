@@ -55,9 +55,9 @@ class DQNAgent:
         return model
 
 
-    def memorize(self, state, action, reward, next_state, done):
+    def memorize(self, state, action, reward, next_state, done, frameNumber):
         # print(state.shape, next_state.shape)
-        self.memory.append((state, action, reward, next_state, done))
+        self.memory.append((state, action, reward, next_state, done, frameNumber))
 
     def save_loss(self,loss):
         self.loss_list.append(loss)
@@ -66,10 +66,12 @@ class DQNAgent:
         # randomly select action
         if np.random.rand() <= self.epsilon:
             #[4-8] get random number
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! I am using random for F's sake")
             return random.randrange(self.action_size)
             #return random.randint(5,7)
         # use NN to predict action
         state = np.expand_dims(state, axis=0)
+        print("I am not using random angle for God's Sake !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         act_values = self.model.predict(state) # [[0.2, 0.3, 0.6, 0.1]]
         return np.argmax(act_values[0])  
 
@@ -122,7 +124,7 @@ class DQNAgent:
         # return loss
         minibatch = random.sample(self.memory, batch_size)
         states, targets_f = [], []
-        for state, action, reward, next_state, done in minibatch:
+        for state, action, reward, next_state, done, frameNumber in minibatch:
             # if done, set target = reward
             target = reward
             # if not done, predict future discounted reward with the Bellman equation
@@ -131,8 +133,10 @@ class DQNAgent:
             if not done:
                 #print(np.amax(self.model.predict(next_state)[0])
               #  print("Expanded ", next_state.shape)
+                #print("[predicting..")
+                print(frameNumber)
                 values = self.model.predict(next_state)
-                target = (reward + self.gamma * np.amax(values[0]))
+                target = (reward + self.gamma * np.argmax(values[0]))
              #   print("worked")
 
             state = np.expand_dims(state, axis=0)       
@@ -144,7 +148,7 @@ class DQNAgent:
             states.append(state[0])
             targets_f.append(target_f[0])
         # RUN ONE ITERATION OF GRADIENT DESCENT
-        print(len(states), len(targets_f))
+        #print(len(states), len(targets_f))
         history = self.model.fit(np.array(states), np.array(targets_f), epochs=1, verbose=0)
         # Keeping track of loss
         loss = history.history['loss'][0]
