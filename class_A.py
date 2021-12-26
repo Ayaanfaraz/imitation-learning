@@ -135,6 +135,7 @@ except ImportError:
     raise RuntimeError('cannot import numpy, make sure numpy package is installed')
 
 collision_array = []
+obstacle_distance = []
 image_list = []
 count = []
 lane_invasion_error = []
@@ -186,6 +187,7 @@ class World(object):
         self.collision_sensor = None
         self.lane_invasion_sensor = None
         self.gnss_sensor = None
+        self.obstacle_detector = None
         self.imu_sensor = None
         self.radar_sensor = None
         self.camera_manager = None
@@ -243,7 +245,9 @@ class World(object):
         self.collision_sensor = CollisionSensor(self.player, self.hud)
         self.lane_invasion_sensor = LaneInvasionSensor(self.player, self.hud)
         self.gnss_sensor = GnssSensor(self.player)
+        #self.obstacle_detector = LineOfSightSensor(self.player, self.hud)
         self.imu_sensor = IMUSensor(self.player)
+        self.radar_sensor = RadarSensor(self.player)
         self.camera_manager = CameraManager(self.player, self.hud, self._gamma)
         self.camera_manager.transform_index = cam_pos_index
         self.camera_manager.set_sensor(cam_index, notify=False)
@@ -284,6 +288,7 @@ class World(object):
             self.collision_sensor.sensor,
             self.lane_invasion_sensor.sensor,
             self.gnss_sensor.sensor,
+            self.obstacle_detector.sensor,
             self.imu_sensor.sensor]
         for sensor in sensors:
             if sensor is not None:
@@ -893,32 +898,73 @@ class RadarSensor(object):
         # points = np.reshape(points, (len(radar_data), 4))
 
         current_rot = radar_data.transform.rotation
+        # coming_close.append((depth, direction))
+        #print("Distance ",radar_data[len(radar_data)/2] )
         for detect in radar_data:
-            azi = math.degrees(detect.azimuth)
-            alt = math.degrees(detect.altitude)
-            # The 0.25 adjusts a bit the distance so the dots can
-            # be properly seen
-            fw_vec = carla.Vector3D(x=detect.depth - 0.25)
-            carla.Transform(
-                carla.Location(),
-                carla.Rotation(
-                    pitch=current_rot.pitch + alt,
-                    yaw=current_rot.yaw + azi,
-                    roll=current_rot.roll)).transform(fw_vec)
+            # azi = math.degrees(detect.azimuth)
+            # alt = math.degrees(detect.altitude)
+            # # The 0.25 adjusts a bit the distance so the dots can
+            # # be properly seen
+            #fw_vec = carla.Vector3D(x=detect.depth - 0.25)
+            # print("Depth from Radar Sensor: ", detect.depth)
+            if detect.depth <= float(30.0):
+                obstacle_distance.append(detect.depth)
+            # carla.Transform(
+            #     carla.Location(),
+            #     carla.Rotation(
+            #         pitch=current_rot.pitch + alt,
+            #         yaw=current_rot.yaw + azi,
+            #         roll=current_rot.roll)).transform(fw_vec)
 
-            def clamp(min_v, max_v, value):
-                return max(min_v, min(value, max_v))
+            # def clamp(min_v, max_v, value):
+            #     return max(min_v, min(value, max_v))
 
-            norm_velocity = detect.velocity / self.velocity_range # range [-1, 1]
-            r = int(clamp(0.0, 1.0, 1.0 - norm_velocity) * 255.0)
-            g = int(clamp(0.0, 1.0, 1.0 - abs(norm_velocity)) * 255.0)
-            b = int(abs(clamp(- 1.0, 0.0, - 1.0 - norm_velocity)) * 255.0)
-            self.debug.draw_point(
-                radar_data.transform.location + fw_vec,
-                size=0.075,
-                life_time=0.06,
-                persistent_lines=False,
-                color=carla.Color(r, g, b))
+            # norm_velocity = detect.velocity / self.velocity_range # range [-1, 1]
+            # r = int(clamp(0.0, 1.0, 1.0 - norm_velocity) * 255.0)
+            # g = int(clamp(0.0, 1.0, 1.0 - abs(norm_velocity)) * 255.0)
+            # b = int(abs(clamp(- 1.0, 0.0, - 1.0 - norm_velocity)) * 255.0)
+            # self.debug.draw_point(
+            #     radar_data.transform.location + fw_vec,
+            #     size=0.075,
+            #     life_time=0.06,
+            #     persistent_lines=False,
+            #     color=carla.Color(r, g, b))
+# ==============================================================================
+# -- Obstacle Detector -------------------------------------------------------------
+# ==============================================================================
+
+
+class LineOfSightSensor(object):
+    def __init__(self, parent_actor, hud):
+        self.sensor = None
+        self._history = []
+        self._parent = parent_actor
+        self._hud = hud
+        self._event_count = 0
+        self.sensor_transform = carla.Transform(carla.Location(x=1.6, z=1.7), carla.Rotation(yaw=0)) # Put this sensor on the windshield of the car.
+        world = self._parent.get_world()
+        bp = world.get_blueprint_library().find('sensor.other.obstacle')
+        bp.set_attribute('distance', '10')
+        bp.set_attribute('hit_radius', '5')
+        bp.set_attribute('only_dynamics', 'true')
+        #bp.set_attribute('debug_linetrace', 'true')
+        bp.set_attribute('sensor_tick', '1')
+        self.sensor = world.spawn_actor(bp, self.sensor_transform, attach_to=self._parent)
+        weak_self = weakref.ref(self)
+        #self.sensor.listen(lambda event: LineOfSightSensor._on_LOS(weak_self, event))
+
+
+    @staticmethod
+    def _on_LOS(weak_self, event):
+        self = weak_self()
+        if not self:
+            return
+        print (str(event.other_actor))
+        # if event.other_actor.type_id.startswith('vehicle.'):
+        print ("Event %s, in line of sight with %s at distance %u" % (self._event_count, event.other_actor.type_id, event.distance))
+        self._event_count += 1
+
+
 
 # ==============================================================================
 # -- CameraManager -------------------------------------------------------------
@@ -1081,36 +1127,34 @@ def game_loop(args):
 
         # class_B.Steering()
 
-        state_size = (720, 1280, 3) 
+        state_size = (480, 640, 3) 
         action_size = 13 # action: various steering angles
         agent = class_B.DQNAgent(state_size, action_size)
-        batch_size = 4
+        batch_size = 8
 
         while True:
-            #clock.tick_busy_loop(1)
+            #agent.load("_out/savedModel.h5")
             for i in range(100):
                 
                 #1. respawn car
-                #world.tick(clock)
                 clock.tick_busy_loop(1)
                 collision_array.clear()
                 lane_invasion_error.clear()
+                obstacle_distance.clear()
                 #world.restart()
 
                 world.player.set_transform(world.map.get_spawn_points()[0])
-
-                # world.player.set_transform(world.map.get_spawn_points()[0])
-                # waypoint = random.choice(waypoint.next(1.5))
-                # world.player.set_transform(world.map.get_spawn_points()[0])
 
                 clock.tick_busy_loop(1)
 
                 print ("Episode ", i)
                 
                 #2. get initial image because new episode
-                #clock.tick_busy_loop(1)
                 state, frame = image_list.pop()
-                image_list.clear()
+                
+                #Clear list on every even number
+                if i%2 == 0:
+                    image_list.clear()
 
                 for j in range(3000):
 
@@ -1126,46 +1170,41 @@ def game_loop(args):
                     done = controller.parse_events(client, world, angle)
 
                     #Assign collision rewards
+                    reward_collison = 0
                     if type(done) == str:
                         if done == 'Vehicle':
-                            reward_collison = -100
+                            reward_collison = -300
                         else:
-                            reward_collison = -75
-                    else:
-                        reward_collison = 0
+                            reward_collison = -200
 
                     #Assign lane cross rewards
                     reward_lane = 0
                     if len(lane_invasion_error) > 0:
-                        # print("lane crossed reward: ",lane_invasion_error[0])
                         if 'Broken' in lane_invasion_error[0]:
-                            reward_lane = -10
+                            reward_lane = -30
                         if 'Solid' in lane_invasion_error[0]:
-                            reward_lane = -50
+                            reward_lane = -100
                         lane_invasion_error.clear()
                    
-                    #print("reward: ", reward_lane)     
-
                     #Assign reward for obstacle distance
-                    obstacle = False
-                    if obstacle == True:
-                        reward_obs = 25 # to encourage longer gaps between obstacles
-                    else:
-                        reward_obs = 0
+                    reward_obs = 0
+                    distance = 999
+                    if len(obstacle_distance) > 0 :
+                        distance = obstacle_distance.pop()
+                        if distance < 10:
+                            reward_obs = -40 + distance
+                        else:
+                            reward_obs = distance # to encourage longer gaps between obstacles
                         
                     # Assign reward for steering angle
                     reward_steer = 0
                     if abs(angle) > 0.2:
-                        reward_steer = -20
+                        reward_steer = -50
                         
                     total_reward = reward_obs + reward_steer + reward_collison + reward_lane
-                    
-                    # #Print angles
-                    # print("predicted angle: ", angle)
-                    # #Print rewards 
-                    # print("obs: %d  steer: %d col: %d lane: %d \n" 
-                    # % (reward_obs,reward_steer,reward_collison,reward_lane))
-                    
+                    print("Angle: ",angle, "Steer: ", reward_steer, "Col: ", reward_collison, "Lane: ", reward_lane, 
+                    "obs: ", reward_obs, "distance: ", distance,"\n")
+
                     #Display next frames
                     world.tick(clock)
                     world.render(display)
@@ -1174,34 +1213,29 @@ def game_loop(args):
 
                     #Get the next state
                     next_state, frame = image_list.pop()
-                    image_list.clear()
+                    #image_list.clear()
 
                     #Send rewards to model to memorize/ calculate loss
                     memory_done = False
                     if done is True or type(done) == str:
                         memory_done = True
                     if state.shape == next_state.shape:
-                        # print("Both states have same shape")
-                        # print((state.shape, action_index, total_reward, next_state.shape, memory_done, counter))
                         agent.memorize(state, action_index, total_reward, next_state, memory_done, frame)
 
                     #Set next state to st
                     state = next_state
 
                     #Calculate loss
-                    if len(agent.memory) > batch_size and j > 15:
-                        # print("Epsiode #: %d and Breaking before replay" % i)
+                    if len(agent.memory) > batch_size:
                         loss = agent.replay(batch_size)
-                        #unless agent.replay(batch_size) == True:   
-                        print("loss: ", loss)
                         
                     # Collision happened
                     if type(done) == str:
-                        # print("Collision Occured, Next episode beginning...")
-                        # print("collision reward ", reward_collison)
                         print("Collided frame number: ",frame)
+                        print("Lasted for %d steps" % j)
                         collision_array.clear()
                         lane_invasion_error.clear()
+                        obstacle_distance.clear()
                         world.player.set_transform(world.map.get_spawn_points()[0])
                         #world.restart()
                         break
@@ -1209,10 +1243,7 @@ def game_loop(args):
                     elif done is True:
                         return
                 counter += 1
-                #Print loss at end of episode
-                # if len(agent.memory) > batch_size:
-                #     loss = agent.replay(batch_size)
-                #     print("Current loss is %f", loss)
+                agent.save("_out/savedModel.h5")
 
     finally:
 

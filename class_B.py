@@ -56,103 +56,49 @@ class DQNAgent:
 
 
     def memorize(self, state, action, reward, next_state, done, frameNumber):
-        # print(state.shape, next_state.shape)
         self.memory.append((state, action, reward, next_state, done, frameNumber))
 
-    def save_loss(self,loss):
-        self.loss_list.append(loss)
+    def load(self, name):
+        self.model.load_weights(name)
+
+    def save(self, name):
+        self.model.save_weights(name)
         
     def act(self, state):
         # randomly select action
         if np.random.rand() <= self.epsilon:
-            #[4-8] get random number
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! I am using random for F's sake")
             return random.randrange(self.action_size)
             #return random.randint(5,7)
         # use NN to predict action
         state = np.expand_dims(state, axis=0)
-        print("I am not using random angle for God's Sake !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        act_values = self.model.predict(state) # [[0.2, 0.3, 0.6, 0.1]]
+        act_values = self.model.predict(state)
         return np.argmax(act_values[0])  
 
 
     def replay(self, batch_size):
-        # minibatch = random.sample(self.memory, batch_size)
-        # states, targets_f = [], []
-        # for state, action, reward, next_state, done in minibatch:
-        #     state = np.expand_dims(state, axis=0)
-        #     #print(state.shape)
-        #     self.save_loss(np.amax(self.model.predict(state)[0]))
-        #     # if done, set target = reward
-        #     target = reward
-        #     # if not done, predict future discounted reward with the Bellman equation
-        #     #print("Before expand ", next_state.shape)
-        #     next_state = np.expand_dims(next_state, axis=0)
-        #     if not done:
-        #         #print(np.amax(self.model.predict(next_state)[0])
-        #         #print("Expanded ", next_state.shape)
-        #         values = self.model.predict(next_state)
-        #         target = (reward + self.gamma * np.amax(values[0]))
-        #         #print("worked")
-
-        #     state = np.expand_dims(state, axis=0)       
-        #     target_f = self.model.predict(state)
-        #     # print("my target_f is: ",target_f)
-        #     #print("My target is: ",target)
-        #     target_f[0][action] = target 
-        #     # filtering out states and targets for training
-        #     states.append(state[0])
-        #     targets_f.append(target_f[0])
-
-        #     ##TEST
-        #     # history = self.model.fit(np.array(states), np.array(targets_f), epochs=1, verbose=0)
-        #     # loss = history.history['loss'][0]
-        #     # if self.epsilon > self.epsilon_min:
-        #     #     self.epsilon *= self.epsilon_decay
-        #     # #print("Broke Here 2")
-        #     # return loss
-        #     ###TEST
-
-        # # RUN ONE ITERATION OF GRADIENT DESCENT
-        # print(len(states), len(targets_f))
-        # history = self.model.fit(np.array(states), np.array(targets_f), epochs=1, verbose=0)
-        # # Keeping track of loss
-        # loss = history.history['loss'][0]
-        # if self.epsilon > self.epsilon_min:
-        #     self.epsilon *= self.epsilon_decay
-        # #print("Broke Here 2")
-        # return loss
         minibatch = random.sample(self.memory, batch_size)
         states, targets_f = [], []
         for state, action, reward, next_state, done, frameNumber in minibatch:
             # if done, set target = reward
             target = reward
             # if not done, predict future discounted reward with the Bellman equation
-           # print("Before expand ", next_state.shape)
             next_state = np.expand_dims(next_state, axis=0)
             if not done:
-                #print(np.amax(self.model.predict(next_state)[0])
-              #  print("Expanded ", next_state.shape)
-                #print("[predicting..")
-                print(frameNumber)
                 values = self.model.predict(next_state)
                 target = (reward + self.gamma * np.argmax(values[0]))
-             #   print("worked")
 
             state = np.expand_dims(state, axis=0)       
             target_f = self.model.predict(state)
-            # print("my target_f is: ",target_f)
-         #   print("My target is: ",target)
             target_f[0][action] = target 
+
             # filtering out states and targets for training
             states.append(state[0])
             targets_f.append(target_f[0])
+
         # RUN ONE ITERATION OF GRADIENT DESCENT
-        #print(len(states), len(targets_f))
         history = self.model.fit(np.array(states), np.array(targets_f), epochs=1, verbose=0)
         # Keeping track of loss
         loss = history.history['loss'][0]
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
-      #  print("Broke Here 2")
         return loss
