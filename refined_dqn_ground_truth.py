@@ -188,7 +188,6 @@ class CarEnv:
         self.ss_cam.set_attribute("image_size_x", f"{self.im_width}")
         self.ss_cam.set_attribute("image_size_y", f"{self.im_height}")
         self.ss_cam.set_attribute("fov", f"110")
-        
 
         transform = carla.Transform(carla.Location(x=2.5, z=0.7))
         self.rgb_sensor = self.world.spawn_actor(self.rgb_cam, transform, attach_to=self.vehicle)
@@ -271,14 +270,6 @@ class CarEnv:
         kmh = int(3.6 * math.sqrt(v.x**2 + v.y**2 + v.z**2))
       
         car_location = carla.Actor.get_location(self.actor_list[0])
-        # nearest_waypoint = self.client.get_world().get_map().get_waypoint(car_location,project_to_road=True, lane_type=(carla.LaneType.Driving))#self.initial_waypoint.next(3.0)[0]#
-        # dist = None
-        # if nearest_waypoint is not None:
-        # #     self.world.debug.draw_string(nearest_waypoint.transform.location, 'O', draw_shadow=False,
-        # #                             color=carla.Color(r=0, g=255, b=0), life_time=40,
-        # #                             persistent_lines=True)
-                                    
-        #     dist = round(carla.Location.distance(car_location, nearest_waypoint.transform.location),2)
         reward = 0
         if len(self.collision_hist) != 0:
             done = True
@@ -286,9 +277,9 @@ class CarEnv:
         elif len(self.obstacle_data)!=0 :
             reward = -15+self.obstacle_data[-1].distance
             done = False
-        elif kmh < 30:
+        elif kmh < 15:
             done = False
-            reward = -5
+            reward = -1
         # elif nearest_waypoint is not None and dist <= 0.4:
         #     done = False
         #     reward = 25
@@ -313,9 +304,7 @@ class CarEnv:
         cv2.waitKey(1)
         cv2.imshow("Semantic Segmentation", semantic_segmentation)
         cv2.waitKey(1)
-
         current_state = semantic_segmentation
-
         return current_state, reward, done, None
 
 
@@ -332,7 +321,6 @@ class DQNAgent:
         except:
             print("replay load error")
             pass
-
         self.target_update_counter = 0  # will track when it's time to update the target model
        
         self.model = self.create_model() # Single xception model
@@ -354,12 +342,8 @@ class DQNAgent:
             self.optimizer.load_state_dict(loaded_state['optimizer'])
         except:
             print("Model state error")
-            pass
-
-
     def create_model(self):
         return xception.xception(num_classes=3, pretrained=False).to(device="cuda:1")
-        #return model
 
     # Adds step's data to a memory replay array
     # (observation space, action, reward, new observation space, done)= (current_state, action, reward, new_state, done)
@@ -432,8 +416,6 @@ class DQNAgent:
         with torch.no_grad():
             return self.model(
                 (torch.unsqueeze(torch.from_numpy(state), 0).permute(0,3,1,2)/255).to(device='cuda:1'))[0]
-            #print("q vector: ", q_vector.item())
-            #return q_vector
         
     def train_in_loop(self):
         self.training_initialized = True
@@ -577,7 +559,6 @@ if __name__ == '__main__':
             # End of episode - destroy agents
             for actor in env.actor_list:
                 actor.destroy()
-            #agent.train()
             pygame.quit()
 
             # Decay epsilon
@@ -592,14 +573,7 @@ if __name__ == '__main__':
             plt.plot(episode_list, rewards)
             plt.savefig('_out/reward_graph.png')
 
-            # plt.figure(2)
-            # plt.xlabel('Timesteps')
-            # plt.ylabel('Epsilon')
-            # plt.title(str('Epsilon Decay'))  
-            # plt.plot(timesteps, rewards)
-            # plt.savefig('_out/reward_graph.png')
-    
-    try: 
+    try:       
         with open('_out/episode_list.pkl','wb') as f:
             pickle.dump(episode_list,f)
         with open('_out/rewards_list.pkl','wb') as f:
