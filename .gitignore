@@ -1,0 +1,3 @@
+# Ignore output directory as well as runs directory
+_out/
+runs/

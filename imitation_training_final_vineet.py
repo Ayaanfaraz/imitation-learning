@@ -1,0 +1,214 @@
+import numpy as np
+import matplotlib.pyplot
+import matplotlib.pyplot as plt
+from mergedModel import MyEnsemble as fusionModel
+import matplotlib.pyplot as plt
+import xception
+import torch.nn as nn
+import torch.optim as optim
+import torch
+import pickle
+from tqdm import tqdm
+import random
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+import tiramisuModel.tiramisu as tiramisu
+from torchvision import transforms
+from torch.utils.tensorboard import SummaryWriter
+from mergedModel import MyEnsemble as fusionModel
+
+# command to run the logs on the Tensorboar:
+# tensorboard dev upload --logdir="C:\Users\s1929247\Documents\Ali-Document\Computer Science\Project\imitation\runs\Jun20_14-21-17_AP4SBLJG3"
+
+#Variables
+MEMORY_FRACTION = 0.6
+WIDTH = 300
+HEIGHT = 300
+EPOCHS = 50
+MODEL_NAME = "Xception"
+TRAINING_BATCH_SIZE = 128 #32, 128
+
+device = torch.device("cuda:2")
+# device = torch.device("cpu")
+torch.cuda.empty_cache() 
+
+class imitation:
+    def __init__(self):
+
+        self.model = fusionModel(semantic_model=self.create_model(), uncertainty_model=self.create_model())#.to(device)
+
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                if "model" in name:
+                    param.requires_grad = False
+                else:
+                    print(name) 
+
+        #self.loss = nn.MSELoss()
+        self.optimizer = optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), lr=0.001)
+
+    def create_model(self):
+        return xception.xception(num_classes=2048, pretrained=False)#.to(device)
+
+    def train(self):
+
+        torch.cuda.empty_cache()
+        torch.autograd.set_detect_anomaly(True)
+        criterion = nn.MSELoss()#.to(device)
+        
+        uncertainty_states = []
+        semantic_states = []
+        supervised_labels = []
+
+        actions_list = []
+        images_list = []
+
+        with open('_out/imitation_training_data.pkl','rb') as af:
+            actions_list = pickle.load(af)
+
+        with open('_out/imitation_training_images.pkl','rb') as f:
+            images_list = pickle.load(f)
+        print(len(images_list))
+        
+        
+        images_list1 = images_list[:26743]
+        images_list2 = images_list[26743:]
+        actions_list1 = actions_list[:26743]
+        actions_list2 = actions_list[26743:]
+
+
+        # part1 of data
+        data1=list(zip(images_list1, actions_list1))
+        random.shuffle(data1)
+        images_list1, actions_list1 = zip(*data1)
+        images_list1, actions_list1 = list(images_list1), list(actions_list1)
+
+        # part2 of data
+        data2=list(zip(images_list2, actions_list2))
+        random.shuffle(data2)
+        images_list2, actions_list2 = zip(*data2)
+        images_list2, actions_list2 = list(images_list2), list(actions_list2)
+
+        images_list = images_list1+images_list2
+        actions_list = actions_list1+actions_list2
+
+        TRAIN_SIZE =int(len(images_list) * 0.80) #0.80
+        
+        while images_list:
+
+            semantic_state = (torch.from_numpy(images_list[0][0]).permute(2,0,1)/255)#.to(device)
+            uncertainty_state = (torch.from_numpy(images_list[0][1]).permute(2,0,1)/255)#.to(device)
+
+            semantic_states.append(semantic_state) #Add the uncertainty/semantic segmented tuple
+            uncertainty_states.append(uncertainty_state)
+            
+            del semantic_state
+            del uncertainty_state
+
+            supervised_labels.append(torch.tensor(actions_list[0])) # 16 1 by 3 tensors (list of q value outputs
+            del images_list[0]
+            del actions_list[0]
+
+        # images_list.clear()
+        print("data loaded into tensors")
+        self.model.train().to(device)
+        #del self.loss
+        # print('len semantics', len(semantic_states))
+        
+        tb = SummaryWriter()
+        for lrate in [0.0005, 0.001, 0.005, 0.01]:
+
+            tb = SummaryWriter()
+            self.optimizer = optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), lr=lrate)
+            self.model.train().to(device)
+
+            for epoch in range(EPOCHS):
+                
+                for i in range(0,TRAIN_SIZE,TRAINING_BATCH_SIZE):
+
+                    epoch_itter = epoch * TRAIN_SIZE + i
+                    self.optimizer.zero_grad()
+                    x1    = torch.stack((semantic_states[i:i+int(TRAINING_BATCH_SIZE)]))#Semantic -> [[3x4]] -> 1x3x4 -> #
+                    x2    = torch.stack((uncertainty_states[i:i+int(TRAINING_BATCH_SIZE)]))  #states[i][1]#Uncertainty
+                    y     = torch.stack(supervised_labels[i:i+int(TRAINING_BATCH_SIZE)]) #batch size of 4 labels
+
+                    x1, x2, y  = x1.to(device), x2.to(device), y.to(device)
+
+                    yhat = self.model(x1,x2)
+                    # print("y shape:", y.shape, "yhat shape: ",yhat.shape)
+
+                    loss=criterion(yhat, y)
+                    loss.backward()
+                    self.optimizer.step()
+                    print(f"Loss: lrate-epoch-itter: {lrate}-{epoch}-{i}", loss.item())
+
+                    cor_steer = cor_throttle = cor_brake = 0
+
+                    for j in range(len(y)):
+
+                        cor_steer += (torch.round(y[j,0], decimals=2) == torch.round(yhat[j,0], decimals=2)).sum().item()
+                        cor_throttle += (torch.round(y[j,1], decimals=2) == torch.round(yhat[j,1], decimals=2)).sum().item()
+                        cor_brake += (torch.round(y[j,2], decimals=2) == torch.round(yhat[j,2], decimals=2)).sum().item()
+
+                    accuracy_steer = round(cor_steer/TRAINING_BATCH_SIZE, 3)
+                    accuracy_throttle = round(cor_throttle/TRAINING_BATCH_SIZE, 3)
+                    accuracy_brake = round(cor_brake/TRAINING_BATCH_SIZE, 3)
+                    accuracy_avg = round((accuracy_steer + accuracy_throttle + accuracy_brake) / 3, 3)
+
+                    tb.add_scalar("Loss", loss, epoch_itter)
+                    tb.add_scalar("Accuracy_steer", accuracy_steer, epoch_itter)
+                    tb.add_scalar("Accuracy_throttle", accuracy_throttle, epoch_itter)
+                    tb.add_scalar("Accuracy_brake", accuracy_brake, epoch_itter)
+                    tb.add_scalar("Accuracy_avg", accuracy_avg, epoch_itter)
+
+                    # print("Accuracy_steer: ", accuracy_steer, "Accuracy_throttle: ", accuracy_throttle, "Accuracy_brake: ", accuracy_brake, "Accuracy_avg: ", accuracy_avg)
+
+
+######Validating the model
+                torch.cuda.empty_cache()
+                with torch.no_grad():
+                    self.model.eval().to(device)
+                
+                    x1_test    = torch.stack(semantic_states[TRAIN_SIZE:])#Semantic 
+                    x2_test    = torch.stack(uncertainty_states[TRAIN_SIZE:])  #states[i][1]#Uncertainty
+                    y_test     = torch.stack(supervised_labels[TRAIN_SIZE:]) #batch size of 4 labels
+
+                    x1_test, x2_test, y_test  = x1_test.to(device), x2_test.to(device), y_test.to(device)
+
+                    yhat_test = self.model(x1_test, x2_test)
+                    
+                    test_correct_steer = test_correct_throttle = test_correct_brake = 0
+                    for k in range(len(y_test)):
+
+                        test_correct_steer += (torch.round(y_test[k,0], decimals=2) == torch.round(yhat_test[k,0], decimals=2)).sum().item()
+                        test_correct_throttle += (torch.round(y_test[k,1], decimals=2) == torch.round(yhat_test[k,1], decimals=2)).sum().item()
+                        test_correct_brake += (torch.round(y_test[k,2], decimals=2) == torch.round(yhat_test[k,2], decimals=2)).sum().item()
+
+                    test_accuracy_steer = round(test_correct_steer/len(y_test), 3)
+                    test_accuracy_throttle = round(test_correct_throttle/len(y_test), 3)
+                    test_accuracy_brake = round(test_correct_brake/len(y_test), 3)
+                    test_accuracy_avg = round((test_accuracy_steer + test_accuracy_throttle + test_accuracy_brake) / 3, 3)
+
+                    y_test = y_test.cpu().numpy()
+                    yhat_test = yhat_test.cpu().numpy()
+                    mse = mean_squared_error(y_test, yhat_test)
+                    r_square = r2_score(y_test, yhat_test)
+
+                    # print("validation_accuracy_steer: ",test_accuracy_steer,"validation_accuracy_throttle: ",test_accuracy_throttle,"validation_accuracy_brake: ",test_accuracy_brake)
+                    # print("validation_accuracy_avg: ", test_accuracy_avg, "Mean Squared Error :", mse, "R^2 :",r_square)
+                   
+                    tb.add_scalar("validation_accuracy_steer", test_accuracy_steer, epoch)
+                    tb.add_scalar("validation_accuracy_throttle", test_accuracy_throttle, epoch)
+                    tb.add_scalar("validation_accuracy_brake", test_accuracy_brake, epoch)
+                    tb.add_scalar("validation_accuracy_avg", test_accuracy_avg, epoch)
+                    tb.add_scalar("validation_MSE", mse, epoch)
+                    tb.add_scalar("validation_R2", r_square, epoch)
+                   
+                # i+=TRAINING_BATCH_SIZE
+
+            tb.close()
+            torch.save(self.model,f'imitation_models/model_final_lr_{lrate}.pt')  
+            torch.cuda.empty_cache()
+
+agent = imitation()
+agent.train()

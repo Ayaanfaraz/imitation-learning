@@ -1,8 +1,0 @@
-Requirement already satisfied: keras-preprocessing in c:\users\ayaan\appdata\local\programs\python\python37\lib\site-packages (1.0.1)
-Requirement already satisfied: keras>=2.1.6 in c:\users\ayaan\appdata\local\programs\python\python37\lib\site-packages (from keras-preprocessing) (2.2.0)
-Requirement already satisfied: numpy>=1.9.1 in c:\users\ayaan\appdata\local\programs\python\python37\lib\site-packages (from keras-preprocessing) (1.21.1)
-Requirement already satisfied: six>=1.9.0 in c:\users\ayaan\appdata\local\programs\python\python37\lib\site-packages (from keras-preprocessing) (1.16.0)
-Requirement already satisfied: scipy>=0.14 in c:\users\ayaan\appdata\local\programs\python\python37\lib\site-packages (from keras-preprocessing) (1.4.1)
-Requirement already satisfied: h5py in c:\users\ayaan\appdata\local\programs\python\python37\lib\site-packages (from keras>=2.1.6->keras-preprocessing) (2.10.0)
-Requirement already satisfied: keras-applications==1.0.2 in c:\users\ayaan\appdata\local\programs\python\python37\lib\site-packages (from keras>=2.1.6->keras-preprocessing) (1.0.2)
-Requirement already satisfied: pyyaml in c:\users\ayaan\appdata\local\programs\python\python37\lib\site-packages (from keras>=2.1.6->keras-preprocessing) (6.0)
