@@ -20,6 +20,7 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
+import os
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 # command to run the logs on the Tensorboard:
@@ -87,6 +88,25 @@ class imitation:
         else:
             return 0
     
+    def getRandomPickleBatch(self, number_of_files, batch_size, train):
+        if train :
+            number = random.randrange(0,int(0.8*number_of_files))
+        else:
+            number = random.randrange(int(0.8*number_of_files)+1, number_of_files)
+        file_name = "rgb_sem_data"+str(number)+".pkl"
+        input_file = os.path.normpath(os.path.join(
+                                     "home","asf170004data","pickle_batches",file_name))
+        input_list = []
+        
+        with open(input_file, "wb") as inf:
+            for i in range(batch_size):
+                tuple_object = pickle.load(inf)
+                rgb_state = (torch.from_numpy(tuple_object[0]).permute(2,0,1)/255)#.to(device)
+                semantic_state = (torch.from_numpy(tuple_object[1]).permute(2,0,1)/255)#.to(device)
+                labels = torch.tensor(tuple_object[2])
+                input_list.append((rgb_state, semantic_state, labels))
+        return input_list
+    
     def train(self):
 
         torch.cuda.empty_cache()
@@ -96,45 +116,46 @@ class imitation:
         #rgb_states = []
         #supervised_labels = []
 
-        actions_list = []
-        images_list = []
+        # actions_list = []
+        # images_list = []
 
-        data_filename ='_out/imitation_training_data_512.pkl' #_out/imitation_data_512.pkl'
-        images_filename ='_out/imitation_training_images_512.pkl' #'_out/imitation_images_512.pkl'
+        # data_filename ='_out/imitation_training_data_512.pkl' #_out/imitation_data_512.pkl'
+        # images_filename ='_out/imitation_training_images_512.pkl' #'_out/imitation_images_512.pkl'
 
-        with open(data_filename,'rb') as af:
-            actions_list = pickle.load(af)
+        # with open(data_filename,'rb') as af:
+        #     actions_list = pickle.load(af)
 
-        with open(images_filename,'rb') as f:
-            images_list = pickle.load(f)
-        print("Dataset size: ", len(images_list))
+        # with open(images_filename,'rb') as f:
+        #     images_list = pickle.load(f)
+        # print("Dataset size: ", len(images_list))
         
-        shuffled_list = []
-        for i in range(len(images_list)):
-            shuffled_list.append(i)
-        random.shuffle(shuffled_list)
-
-        TRAIN_SIZE =int(len(images_list) * 0.80) #0.80
+        # shuffled_list = []
+        # for i in range(len(images_list)):
+        #     shuffled_list.append(i)
+        # random.shuffle(shuffled_list)
         
-        input_list = []
-
-        for i in shuffled_list:
-
-            rgb_state = (torch.from_numpy(images_list[i][0]).permute(2,0,1)/255)#.to(device)
-            semantic_state = (torch.from_numpy(images_list[i][1]).permute(2,0,1)/255)#.to(device)
-            labels = torch.tensor(actions_list[i])
+        TRAIN_SIZE = 0 #int(0.8*total_data_samples)
+        LEN_FILES = 0#number of files in dir
         
-            input_list.append((rgb_state, semantic_state, labels)) 
-            del rgb_state
-            del semantic_state
-            del labels
+        # input_list = []
+
+        # for i in shuffled_list:
+
+        #     rgb_state = (torch.from_numpy(images_list[i][0]).permute(2,0,1)/255)#.to(device)
+        #     semantic_state = (torch.from_numpy(images_list[i][1]).permute(2,0,1)/255)#.to(device)
+        #     labels = torch.tensor(actions_list[i])
+        
+        #     input_list.append((rgb_state, semantic_state, labels)) 
+        #     del rgb_state
+        #     del semantic_state
+        #     del labels
             
-            # Set each entry that is big to 0 as we iterate to keep list size same
-            images_list[i] = 0
-            actions_list[i] = 0
+        #     # Set each entry that is big to 0 as we iterate to keep list size same
+        #     images_list[i] = 0
+        #     actions_list[i] = 0
 
-        del images_list
-        del actions_list
+        # del images_list
+        # del actions_list
         
         print("data loaded into tensors")
         self.model.train()#.to(device2)
@@ -156,15 +177,17 @@ class imitation:
             ddp_model.train().to(device_id)
 
             for epoch in range(EPOCHS):
-                random.shuffle(input_list)
+                #random.shuffle(input_list)
                 ##### Create Training Batch #####
                 for i in range(0,TRAIN_SIZE,TRAINING_BATCH_SIZE):
-                    r = random.randint(0, TRAIN_SIZE-TRAINING_BATCH_SIZE)
+                    # Get a random pickle file loaded and returned.
+                    input_list = self.getRandomPickleBatch(LEN_FILES, train=True)
+
                     epoch_itter = epoch * TRAIN_SIZE + i
                     self.optimizer.zero_grad()
-                    x1 = torch.stack(list(zip(*input_list[r:r+int(TRAINING_BATCH_SIZE)]))[0]) #Semantic -> [[3x4]] -> 1x3x4 -> #
-                    x2 = torch.stack(list(zip(*input_list[r:r+int(TRAINING_BATCH_SIZE)]))[1]) #states[i][1]#Uncertainty
-                    y  = torch.stack(list(zip(*input_list[r:r+int(TRAINING_BATCH_SIZE)]))[2]) #batch size of 4 labels
+                    x1 = torch.stack(list(zip(*input_list[0:int(TRAINING_BATCH_SIZE)]))[0]) #Semantic -> [[3x4]] -> 1x3x4 -> #
+                    x2 = torch.stack(list(zip(*input_list[0:int(TRAINING_BATCH_SIZE)]))[1]) #states[i][1]#Uncertainty
+                    y  = torch.stack(list(zip(*input_list[0:int(TRAINING_BATCH_SIZE)]))[2]) #batch size of 4 labels
                     y = y.type(torch.FloatTensor)
                     x1, x2, y  = x1.to(device_id), x2.to(device_id), y.to(device_id)
 
@@ -232,11 +255,11 @@ class imitation:
                     with torch.no_grad():
                         # Iterate over epoch
                         for i in range(TRAIN_SIZE, len(input_list), VAL_TRAINING_BATCH_SIZE):
-                            r_v = random.randint(TRAIN_SIZE, len(input_list)-VAL_TRAINING_BATCH_SIZE)
                             epoch_itter = epoch * TRAIN_SIZE + i
-                            x1_test = torch.stack(list(zip(*input_list[r_v:r_v+int(VAL_TRAINING_BATCH_SIZE)]))[0])
-                            x2_test = torch.stack(list(zip(*input_list[r_v:r_v+int(VAL_TRAINING_BATCH_SIZE)]))[1])
-                            y_test  = torch.stack(list(zip(*input_list[r_v:r_v+int(VAL_TRAINING_BATCH_SIZE)]))[2])
+                            input_list = self.getRandomPickleBatch(LEN_FILES, train=False)
+                            x1_test = torch.stack(list(zip(*input_list[0:int(VAL_TRAINING_BATCH_SIZE)]))[0])
+                            x2_test = torch.stack(list(zip(*input_list[0:int(VAL_TRAINING_BATCH_SIZE)]))[1])
+                            y_test  = torch.stack(list(zip(*input_list[0:int(VAL_TRAINING_BATCH_SIZE)]))[2])
                             y_test = y_test.type(torch.FloatTensor)
                             x1_test, x2_test, y_test  = x1_test.to(device_id), x2_test.to(device_id), y_test.to(device_id)
 
@@ -293,7 +316,7 @@ class imitation:
                         #     torch.save(self.model,name)
             if rank == 0:
                 tb.close()
-            torch.save(self.model,f'imitation_models/55kdata_parallel')  
+            torch.save(self.model,f'imitation_models/1milliondata_parallel')  
             torch.cuda.empty_cache()
 # if __main__:
 agent = imitation()
