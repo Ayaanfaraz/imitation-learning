@@ -31,16 +31,15 @@ WIDTH = 300
 HEIGHT = 300
 EPOCHS = 450
 MODEL_NAME = "Xception"
-TRAINING_BATCH_SIZE =128
-LEN_FILES = 188306#2788#number of files in dir
-TRAIN_SIZE = int(0.8 * LEN_FILES) #int(0.8*total_data_samples)
+TRAINING_BATCH_SIZE =256#128 #32, 128
+TRAIN_SIZE = 170 #int(0.8*total_data_samples)
+LEN_FILES = 213#2788#number of files in dir
 
 # device = torch.device("cuda:2")
 # device2 = torch.device("cuda:2")
 # device = torch.device("cpu")
 
 torch.cuda.empty_cache() 
-torch.backends.cudnn.enabled = False
 
 class imitation:
     def __init__(self):
@@ -92,27 +91,23 @@ class imitation:
             return 0
     
     def getRandomPickleBatch(self, number_of_files, batch_size, train):
-        input_list = []
         try:
-            for i in range(batch_size):
-                if train :
-                    number = random.randrange(0,int(0.8*number_of_files))
-                else:
-                    number = random.randrange(int(0.8*number_of_files)+1, number_of_files)
-
-                file_name = "rgb_sem_data"+str(number)+".pkl"
-                input_file = os.path.normpath(os.path.join(
-                                            "/home","asf170004","data","newBalancedData", "pickle_batches_50k",file_name))
-                
-                with open(input_file, "rb") as inf:
+            if train :
+                number = random.randrange(0,int(0.8*number_of_files))
+            else:
+                number = random.randrange(int(0.8*number_of_files)+1, number_of_files)
+            file_name = "rgb_sem_data"+str(number)+".pkl"
+            input_file = os.path.normpath(os.path.join(
+                                        "/home","asf170004","data","50KParallel", "pickle_batches_50k",file_name))
+            input_list = []
+            
+            with open(input_file, "rb") as inf:
+                for i in range(batch_size):
                     tuple_object = pickle.load(inf)
                     rgb_state = (torch.from_numpy(tuple_object[0]).permute(2,0,1)/255)#.to(device)
                     semantic_state = (torch.from_numpy(tuple_object[1]).permute(2,0,1)/255)#.to(device)
                     labels = torch.tensor(tuple_object[2])
-                    measurements = labels[3:]
-                    labels = labels[:3]
-                    input_list.append((rgb_state, semantic_state, labels, measurements))
-                    
+                    input_list.append((rgb_state, semantic_state, labels))
             return input_list
         except:
             return self.getRandomPickleBatch(number_of_files, batch_size, train)
@@ -186,7 +181,7 @@ class imitation:
             for epoch in range(EPOCHS):
                 #random.shuffle(input_list)
                 ##### Create Training Batch #####
-                for i in range(0,TRAIN_SIZE, TRAINING_BATCH_SIZE):
+                for i in range(0,TRAIN_SIZE):
                     # Get a random pickle file loaded and returned.
                     input_list = self.getRandomPickleBatch(LEN_FILES, batch_size=TRAINING_BATCH_SIZE, train=True)
 
@@ -195,25 +190,19 @@ class imitation:
                     x1 = torch.stack(list(zip(*input_list[0:int(TRAINING_BATCH_SIZE)]))[0]) #Semantic -> [[3x4]] -> 1x3x4 -> #
                     x2 = torch.stack(list(zip(*input_list[0:int(TRAINING_BATCH_SIZE)]))[1]) #states[i][1]#Uncertainty
                     y  = torch.stack(list(zip(*input_list[0:int(TRAINING_BATCH_SIZE)]))[2]) #batch size of 4 labels
-                    x3  = torch.stack(list(zip(*input_list[0:int(TRAINING_BATCH_SIZE)]))[3]) #measurement vector
                     y = y.type(torch.FloatTensor)
-                    x3 = x3.type(torch.FloatTensor)
-                    x1, x2, y, x3  = x1.to(device_id), x2.to(device_id), y.to(device_id), x3.to(device_id)
-                    # print("X1: ", x1.shape)
-                    yhat = ddp_model(x1,x2, x3)
+                    x1, x2, y  = x1.to(device_id), x2.to(device_id), y.to(device_id)
+
+                    yhat = ddp_model(x1,x2)
                     #print("y shape:", y.shape, "yhat shape: ",yhat.shape)
                     #print("X1(RGB Batch Shape): ", x1.shape, "Inner Tensor Shape: ", x1[0].shape)
-                    
-                    #weight = get_weight(yhat)
-                    #loss= weight * criterion(yhat, y)
 
-                    loss= criterion(yhat, y)
+                    loss=criterion(yhat, y)
                     loss.backward()
                     self.optimizer.step()
 
                     del x1
                     del x2
-                    del x3
                     torch.cuda.empty_cache()
                     print(f"Loss: epoch-itter: {epoch}-{i}", round(loss.item(), 3))
 
@@ -239,17 +228,17 @@ class imitation:
                         del yhat
 
                         #### Add Tensorboard Training Metrics ####
-                        tb.add_scalar("Accuracy_avg", accuracy_avg, epoch_itter)
-                        tb.add_scalar("Accuracy_steer", accuracy_steer, epoch_itter)
-                        tb.add_scalar("Accuracy_throttle", accuracy_throttle, epoch_itter)
-                        tb.add_scalar("Accuracy_brake", accuracy_brake, epoch_itter)
+                        tb.add_scalar("Accuracy_avg", accuracy_avg, epoch_itter*TRAINING_BATCH_SIZE)
+                        tb.add_scalar("Accuracy_steer", accuracy_steer, epoch_itter*TRAINING_BATCH_SIZE)
+                        tb.add_scalar("Accuracy_throttle", accuracy_throttle, epoch_itter*TRAINING_BATCH_SIZE)
+                        tb.add_scalar("Accuracy_brake", accuracy_brake, epoch_itter*TRAINING_BATCH_SIZE)
 
                         tb.add_scalar("Loss", loss, epoch_itter)
 
-                        tb.add_scalar("RMSE", math.sqrt(loss), epoch_itter)
-                        tb.add_scalar("Steer RMSE", rmse_steer, epoch_itter)
-                        tb.add_scalar("Throttle RMSE", rmse_throttle, epoch_itter)
-                        tb.add_scalar("Brake RMSE", rmse_brake, epoch_itter)
+                        tb.add_scalar("RMSE", math.sqrt(loss), epoch_itter*TRAINING_BATCH_SIZE)
+                        tb.add_scalar("Steer RMSE", rmse_steer, epoch_itter*TRAINING_BATCH_SIZE)
+                        tb.add_scalar("Throttle RMSE", rmse_throttle, epoch_itter*TRAINING_BATCH_SIZE)
+                        tb.add_scalar("Brake RMSE", rmse_brake, epoch_itter*TRAINING_BATCH_SIZE)
                     else:
                         del y
                         del yhat
@@ -267,24 +256,19 @@ class imitation:
                     # Turn off gradient since validation only
                     with torch.no_grad():
                         # Iterate over epoch
-                        for i in range(TRAIN_SIZE, LEN_FILES, VAL_TRAINING_BATCH_SIZE):
+                        for i in range(TRAIN_SIZE, LEN_FILES):
                             epoch_itter = epoch * TRAIN_SIZE + i
-                            input_list = self.getRandomPickleBatch(LEN_FILES, batch_size=VAL_TRAINING_BATCH_SIZE, train=False)
+                            input_list = self.getRandomPickleBatch(LEN_FILES, batch_size=TRAINING_BATCH_SIZE, train=False)
                             x1_test = torch.stack(list(zip(*input_list[0:int(VAL_TRAINING_BATCH_SIZE)]))[0])
                             x2_test = torch.stack(list(zip(*input_list[0:int(VAL_TRAINING_BATCH_SIZE)]))[1])
                             y_test  = torch.stack(list(zip(*input_list[0:int(VAL_TRAINING_BATCH_SIZE)]))[2])
-                            x3_test  = torch.stack(list(zip(*input_list[0:int(TRAINING_BATCH_SIZE)]))[3]) #batch size of 4 labels
                             y_test = y_test.type(torch.FloatTensor)
-                            x3_test = x3_test.type(torch.FloatTensor)
-                            x1_test, x2_test, y_test, x3_test  = x1_test.to(device_id), x2_test.to(device_id), y_test.to(device_id), x3_test.to(device_id)
-                            # print("X1 Test: ", type(x1_test))
-                            # print("X2 Test: ", type(x2_test))
+                            x1_test, x2_test, y_test  = x1_test.to(device_id), x2_test.to(device_id), y_test.to(device_id)
                             # Get model predictions for validation
-                            yhat_test = ddp_model(x1_test, x2_test, x3_test)
+                            yhat_test = ddp_model(x1_test, x2_test)
 
                             del x1_test
                             del x2_test
-                            del x3_test
                             torch.cuda.empty_cache()
 
                             test_correct_steer = test_correct_throttle = test_correct_brake = 0
@@ -332,11 +316,11 @@ class imitation:
                             tb.add_scalar("Brake Validation RMSE", rmse_val_brake, epoch)
                         
                         if epoch % 50 == 0:
-                            name = str("imitation_models/50kParallel_ddpmeasure_"+str(epoch)+"epochs_450batch128.pt")
+                            name = str("imitation_models/50kParallel_"+str(epoch)+"epochs_256batch.pt")
                             torch.save(self.model,name)
             if rank == 0:
                 tb.close()
-                torch.save(self.model,f'imitation_models/50kparallel_final_measurement.pt')  
+                torch.save(self.model,f'imitation_models/50kparallel_final.pt')  
             torch.cuda.empty_cache()
 # if __main__:
 agent = imitation()

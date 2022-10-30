@@ -5,11 +5,13 @@ import pickle
 import collections
 
 actions_list = []
-with open('/home/asf170004/data/1million_data.pkl','rb') as af:
-    for i in range(759403):
-        actions_list.append(pickle.load(af))
+with open('/home/asf170004/data/50KParallel/imitation_training_data_55k.pkl','rb') as af:
+    #for i in range(54527):
+    actions_list = pickle.load(af)
 
 print("Length of Data: ", len(actions_list))
+# for data in actions_list:
+#     print(data)
 steer_list = [round(data[0],2) for data in actions_list]
 
 dict = {}
@@ -26,5 +28,5 @@ freq = list(dict.values())
 
 import matplotlib.pyplot as plt
 plt.scatter(labels, freq)
-plt.savefig("/home/asf170004/imitation_learning/_out/1millionSteering.png")
+plt.savefig("/home/asf170004/imitation_learning/_out/55ksteering.png")
 #plt.show()

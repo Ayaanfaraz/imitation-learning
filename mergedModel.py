@@ -10,20 +10,20 @@ class MyEnsemble(nn.Module):
         super(MyEnsemble, self).__init__()
         self.semantic_model = semantic_model
         self.uncertainty_model = uncertainty_model
-        self.mergeLayer = nn.Linear(2000, 1024)
+        self.mergeLayer = nn.Linear(2014, 1024)
         self.layer2 = nn.Linear(1024, 256)
         self.layer3 = nn.Linear(256, 128)
         self.layer4 = nn.Linear(128, 3)
         
-    def forward(self, semanticInput, uncertaintyInput):
+    def forward(self, semanticInput, uncertaintyInput, feature_vector):
         x1 = self.semantic_model(semanticInput)
         x2 = self.uncertainty_model(uncertaintyInput)
-        x = torch.cat((x1, x2), dim=1)
+        x = torch.cat((x1, x2, feature_vector), dim=1)
         x = self.mergeLayer(F.relu(x))
         x = self.layer2(F.relu(x))
         x = self.layer3(F.relu(x))
         x = self.layer4(x)
-        return x
+        return x # THIS WILL RETURN THIS FUNCTION * 12 -> SO 128 BATCH SIZE
 
 # Create models and load state_dicts    
 # modelA = MyModelA()
