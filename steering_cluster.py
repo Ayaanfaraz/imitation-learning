@@ -5,7 +5,7 @@ import pickle
 import collections
 
 actions_list = []
-with open('/home/asf170004/data/50KParallel/imitation_training_data_55k.pkl','rb') as af:
+with open('/home/asf170004/data/dagger/dagger_actions.pkl','rb') as af:
     #for i in range(54527):
     actions_list = pickle.load(af)
 
@@ -28,5 +28,5 @@ freq = list(dict.values())
 
 import matplotlib.pyplot as plt
 plt.scatter(labels, freq)
-plt.savefig("/home/asf170004/imitation_learning/_out/55ksteering.png")
+plt.savefig("/home/asf170004/imitation_learning/_out/dagger.png")
 #plt.show()

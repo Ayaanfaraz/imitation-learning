@@ -32,7 +32,7 @@ HEIGHT = 300
 EPOCHS = 450
 MODEL_NAME = "Xception"
 TRAINING_BATCH_SIZE =128
-LEN_FILES = 188306#2788#number of files in dir
+LEN_FILES = 75146#188306#2788#number of files in dir
 TRAIN_SIZE = int(0.8 * LEN_FILES) #int(0.8*total_data_samples)
 
 # device = torch.device("cuda:2")
@@ -102,15 +102,14 @@ class imitation:
 
                 file_name = "rgb_sem_data"+str(number)+".pkl"
                 input_file = os.path.normpath(os.path.join(
-                                            "/home","asf170004","data","newBalancedData", "pickle_batches_50k",file_name))
+                                            "/home","asf170004","data","dagger", "pickle_batches_75k",file_name))
                 
                 with open(input_file, "rb") as inf:
                     tuple_object = pickle.load(inf)
                     rgb_state = (torch.from_numpy(tuple_object[0]).permute(2,0,1)/255)#.to(device)
                     semantic_state = (torch.from_numpy(tuple_object[1]).permute(2,0,1)/255)#.to(device)
-                    labels = torch.tensor(tuple_object[2])
-                    measurements = labels[3:]
-                    labels = labels[:3]
+                    measurements = torch.tensor(tuple_object[2])
+                    labels = torch.tensor(tuple_object[3])
                     input_list.append((rgb_state, semantic_state, labels, measurements))
                     
             return input_list
@@ -200,6 +199,8 @@ class imitation:
                     x3 = x3.type(torch.FloatTensor)
                     x1, x2, y, x3  = x1.to(device_id), x2.to(device_id), y.to(device_id), x3.to(device_id)
                     # print("X1: ", x1.shape)
+                    # print("X2: ", x2.shape)
+                    # print("X3: ", x3.shape)
                     yhat = ddp_model(x1,x2, x3)
                     #print("y shape:", y.shape, "yhat shape: ",yhat.shape)
                     #print("X1(RGB Batch Shape): ", x1.shape, "Inner Tensor Shape: ", x1[0].shape)
@@ -332,11 +333,11 @@ class imitation:
                             tb.add_scalar("Brake Validation RMSE", rmse_val_brake, epoch)
                         
                         if epoch % 50 == 0:
-                            name = str("imitation_models/50kParallel_ddpmeasure_"+str(epoch)+"epochs_450batch128.pt")
+                            name = str("imitation_models/dagger_"+str(epoch)+"epochs_450batch128.pt")
                             torch.save(self.model,name)
             if rank == 0:
                 tb.close()
-                torch.save(self.model,f'imitation_models/50kparallel_final_measurement.pt')  
+                torch.save(self.model,f'imitation_models/dagger_final.pt')  
             torch.cuda.empty_cache()
 # if __main__:
 agent = imitation()
