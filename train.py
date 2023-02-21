@@ -23,7 +23,11 @@ def train(args):
 
     # --- SGD Iterations ---
     for epoch in range(args.epochs):
+        
         print("Starting Epoch: ", epoch)
+        if (epoch%50 == 0):
+            save_model(model)
+
         # Per epoch train loop.
         model.train()
         for _, (rgb_input, sem_input, yhat) in enumerate(train_loader):

@@ -5,6 +5,7 @@ Additionally used as a utility to check model accuracy.
 
 import csv
 import os
+import torch
 
 from PIL import Image, ImageOps
 
@@ -27,7 +28,7 @@ class CarlaAliDataset(Dataset):
         with open(labels_path, "r", encoding="utf-8") as file:
             reader = csv.reader(file)
             for row in reader:
-                self.csv_tuples.append((row[0], row[1], row[2])) 
+                self.csv_tuples.append((row[0], row[1], row[2], row[3], row[4])) 
                 # 0 is rgb fname, 1 is sem name, 2 is data/labels vector
 
         # Cut out the csv headers from extracted data.
@@ -49,7 +50,8 @@ class CarlaAliDataset(Dataset):
         """
 
         # All pairs of image and label are added to csv_tuples string list.
-        data = self.csv_tuples[idx][2]
+        # Grab the data vector from 2nd index, get only labels and change to floats
+        data = [float(self.csv_tuples[idx][2]),float(self.csv_tuples[idx][3]), float(self.csv_tuples[idx][4])]
 
         border = (0, 150, 0, 0) # cut 0 from left, 30 from top, right, bottom
 
@@ -63,7 +65,7 @@ class CarlaAliDataset(Dataset):
         sem_image = ImageOps.crop(sem_image, border)
         sem_tensor = self.transform(sem_image)
 
-        return rgb_tensor, sem_tensor, data[:3]
+        return rgb_tensor, sem_tensor, torch.tensor(data)
 
 
 def load_data(dataset_path, num_workers=0, batch_size=128):
@@ -74,9 +76,27 @@ def load_data(dataset_path, num_workers=0, batch_size=128):
     return DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, shuffle=True, drop_last=False)
 
 
-def accuracy(outputs, labels):
+def accuracy(yhat, y): # yhat is not labels it is prediction
     """
     Returns accuracy between true labels and predictions.
     """
-    outputs_idx = outputs.max(1)[1].type_as(labels)
-    return outputs_idx.eq(labels).float().mean()
+    # outputs_idx = outputs.max(1)[1].type_as(labels)
+    # return outputs_idx.eq(labels).float().mean()
+
+    def equals(y_tensor, yhat_tensor):
+        if round((y_tensor.item()),2) == round(yhat_tensor.item(),2):
+            return 1
+        else:
+            return 0
+
+    cor_steer = cor_throttle = cor_brake = 0
+    for j in range(len(y)):
+        cor_steer += equals(y[j,0],yhat[j,0])
+        cor_throttle += equals(y[j,1],yhat[j,1])
+        cor_brake += equals(y[j,2],yhat[j,2])
+
+    accuracy_steer = round(cor_steer/128, 3)
+    accuracy_throttle = round(cor_throttle/128, 3)
+    accuracy_brake = round(cor_brake/128, 3)
+    accuracy_avg = round((accuracy_steer + accuracy_throttle + accuracy_brake) / 3, 3)
+    return accuracy_avg
